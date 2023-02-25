@@ -241,23 +241,23 @@ def main():
     global format_data
     format_data = "20%y-%m-%d %H:%M:%S.%f"
     starting_date = datetime.strptime(starting_time, format_data)
-    parometer1_rows1, parometer1_rows2, parometer2_rows1, parometer2_rows2, parometer3_rows1, parometer3_rows2 = categorize_paros_datafile(filename)
+    paro1_rows1, paro1_rows2, paro2_rows1, paro2_rows2, paro3_rows1, paro3_rows2 = categorize_paros_datafile(filename)
     
     ## find the index of each barometer the stating time from the list
-    time_matched_index_141920 = time_matched_index(parometer1_rows1, starting_date)
-    time_matched_index_142180 = time_matched_index(parometer1_rows2, starting_date)
-    time_matched_index_141906 = time_matched_index(parometer2_rows1, starting_date)
-    time_matched_index_142176 = time_matched_index(parometer2_rows2, starting_date)
-    time_matched_index_141905 = time_matched_index(parometer3_rows1, starting_date)
-    time_matched_index_141931 = time_matched_index(parometer3_rows2, starting_date)
+    time_matched_index_141920 = time_matched_index(paro1_rows1, starting_date)
+    time_matched_index_142180 = time_matched_index(paro1_rows2, starting_date)
+    time_matched_index_141906 = time_matched_index(paro2_rows1, starting_date)
+    time_matched_index_142176 = time_matched_index(paro2_rows2, starting_date)
+    time_matched_index_141905 = time_matched_index(paro3_rows1, starting_date)
+    time_matched_index_141931 = time_matched_index(paro3_rows2, starting_date)
 
     ## create the list of pressure of raw data and exponential smoothing data
-    raw_141920, exp_smooth_141920 = exp_smoothing_from_raw_data(time_matched_index_141920, parometer1_rows1, number_of_samples, alpha)
-    raw_142180, exp_smooth_142180 = exp_smoothing_from_raw_data(time_matched_index_142180, parometer1_rows2, number_of_samples, alpha)
-    raw_141906, exp_smooth_141906 = exp_smoothing_from_raw_data(time_matched_index_141906, parometer2_rows1, number_of_samples, alpha)
-    raw_142176, exp_smooth_142176 = exp_smoothing_from_raw_data(time_matched_index_142176, parometer2_rows2, number_of_samples, alpha)
-    raw_141905, exp_smooth_141905 = exp_smoothing_from_raw_data(time_matched_index_141905, parometer3_rows1, number_of_samples, alpha)
-    raw_141931, exp_smooth_141931 = exp_smoothing_from_raw_data(time_matched_index_141931, parometer3_rows2, number_of_samples, alpha)
+    raw_141920, exp_smooth_141920 = exp_smoothing_from_raw_data(time_matched_index_141920, paro1_rows1, number_of_samples, alpha)
+    raw_142180, exp_smooth_142180 = exp_smoothing_from_raw_data(time_matched_index_142180, paro1_rows2, number_of_samples, alpha)
+    raw_141906, exp_smooth_141906 = exp_smoothing_from_raw_data(time_matched_index_141906, paro2_rows1, number_of_samples, alpha)
+    raw_142176, exp_smooth_142176 = exp_smoothing_from_raw_data(time_matched_index_142176, paro2_rows2, number_of_samples, alpha)
+    raw_141905, exp_smooth_141905 = exp_smoothing_from_raw_data(time_matched_index_141905, paro3_rows1, number_of_samples, alpha)
+    raw_141931, exp_smooth_141931 = exp_smoothing_from_raw_data(time_matched_index_141931, paro3_rows2, number_of_samples, alpha)
     
     ## plot
     gen_graphs(raw_141920, exp_smooth_141920, raw_142180, exp_smooth_142180, raw_141906, exp_smooth_141906, raw_142176, exp_smooth_142176, raw_141905, exp_smooth_141905, raw_141931, exp_smooth_141931, starting_date)
