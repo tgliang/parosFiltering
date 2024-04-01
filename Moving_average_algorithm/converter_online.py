@@ -2,64 +2,72 @@
 # Tristan Liang
 # 1/19/2023
 
-import csv
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import time
-import matplotlib
-import time
-import array
 from datetime import datetime
 from matplotlib.ticker import StrMethodFormatter
 from statsmodels.tsa.arima.model import ARIMA
 from scipy.signal import butter, lfilter, detrend, welch, spectrogram
 from scipy.signal.windows import hamming
-import os
-import importlib.util
-from pathlib import Path
-import inspect
-from influxdb_client import InfluxDBClient, Point
 from influxdb_client.client.write_api import SYNCHRONOUS
 from datetime import datetime, timedelta
-import argparse
 from apiikey_access import api_key
 from influxdb_client import InfluxDBClient, Point
 from influxdb_client.client.write_api import SYNCHRONOUS
 import matplotlib.dates as mdates
+import os
+from pathlib import Path
+from io import StringIO
 
 # Insturction !!
 # 1st step: do the manual setting, where you can changes the value to what you want
-# 2nd step: uncomment the plot function in the main function (only uncomment one at a time)
 
 """"""""""""""""""""""""""""" manual setting """""""""""""""""""""""""""""""""
-event_name = "Turkey–Syria earthquake" # Name of the event, show n the title of the graph
-start_time = "2023-02-06T00:01:00" # the starting time in the plot
+"""Earthquake data download for matlab analysis"""
+start_time = "2024-04-01T06:41:25" # the starting time in the plot
+box = "parost2" # whi paros box (example: parost, parost2)
+sensor_id = '141929' # barometer id (example: 141920 for parost, 141929 for parost2)
+box_hz = 20 # 20 Hz is the sampling rate of the barometer
+sample_time = 30 # miuntes, time duration of the plot
+sample_rate = 1200 # sample/min, sampling rate of the plot, set 1~1200
+save_file_name = 'e17t2.txt' # name of save data file
+"""""""""""""""""""""""""""""""""""""""""""""""""""
+edit the  above part for downloading data from influx
+"""""""""""""""""""""""""""""""""""""""""""""""""""
+event_name = "2024 earthquake" # Name of the event, show in the title of the graph
 format_data = "20%y-%m-%dT%H:%M:%S" # time format of start_time
-box = "paros1" # which paros box
-sensor_id = '141905' # barometer id
-box_hz = 20 # 20 Hz is the sampling rate of the paro
-sample_rate = 1200 # sample/min, user desired sampling rate of the plot
-sample_time = 660 # miuntes, user desired time duration of the plot
+timestamp_line = True # add vertical line at specified time, True or False
+distance_epic = 6.32*1.6 # in KM, for vertical line at specified date
 alpha = 0.03 # smoothing factor of exponential smoothing, 1 > alpha > 0
 p,d,q = 10,1,10 # p, d, q value of ARIMA model
-A, B = 6, 2  # Fast Fourier transform (FFT) Window size: (2^A) and Shift size: (2^B)
+A, B = 4, 3  # Fast Fourier transform (FFT) Window size: (2^A) and Shift size: (2^B)
 dB = True # plot power in dB, True or False
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 
 
+""""""""""""""""""""""""""""" api_token setting """""""""""""""""""""""""""""""""
+influxdb_apikey = api_key() # download your api_token from influxdB. Remember not to save it in the public file!
+""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+
 device_name = box + "-" + sensor_id
 starting_date = datetime.strptime(start_time, format_data)
 number_of_samples = sample_rate*sample_time
-influxdb_apikey = api_key()
 # Convert start_time from string to datetime object
 start_time_obj = datetime.fromisoformat(start_time)
 # Calculate end_time by adding sample_time (in minutes) to start_time
 end_time_obj = start_time_obj + timedelta(minutes=sample_time)
 # Convert end_time from datetime object to string in the same format as start_time
 end_time = end_time_obj.isoformat()
-print(end_time)
-# end_time = "2023-05-09T03:52:45"
+speed_sound = 20.58 # KM/min
+# Calculate the time taken in minutes
+min_value = distance_epic / speed_sound
+# Split the minutes into whole minutes and remaining seconds
+whole_minutes = int(min_value)
+remaining_seconds = int((min_value - whole_minutes) * 60)
+# Add the minutes and seconds to the start_time to get the arrival time
+arrive_time_dt = starting_date + timedelta(minutes=whole_minutes, seconds=remaining_seconds)
+arrive_time_str = arrive_time_dt.isoformat()
 
 def data_download():
 
@@ -74,45 +82,45 @@ def data_download():
     )
 
     influxdb_query_api = influxdb_client.query_api()
-
-    influxdb_sensorid_tagkey = "anemometer"
     
     # Main Query
-    """idb_query = 'from(bucket:"' + "paros-live-datastream" + '")'\
-        '|> range(start:' + start_time + 'Z, stop:' + end_time + 'Z)'\
-        '|> filter(fn: (r) => r["_measurement"] ==' + box + ')'\
-        '|> filter(fn: (r) => r["sensor_id"] ==' + sensor_id + ')'"""
     
-    idb_query = 'from(bucket:"' + "paros-live-datastream" + '")'\
+    idb_query = 'from(bucket:"' + "parosbox" + '")'\
         '|> range(start:' + start_time + 'Z, stop:' + end_time + 'Z)'\
-        '|> filter(fn: (r) => r["_measurement"] == "paros1" )'\
-        '|> filter(fn: (r) => r["sensor_id"] == "141905")'
+        '|> filter(fn: (r) => r["_measurement"] == "' + box + '" )'\
+        '|> filter(fn: (r) => r["id"] == "' + sensor_id + '")'
 
     
     device_result = influxdb_query_api.query(org=influxdb_org, query=idb_query)
 
-    #print(device_result)
 
     data_list = []
-    time_list = []
+    sensor_time_list = []
     for table in device_result:
         for record in table.records:
             data_list.append(record.get_value())
-            time_list.append(record.get_time())  # Assuming there is a method get_time()
+            sensor_time_list.append(record.get_time())
+
 
     # Create a DataFrame for easy manipulation
-    df = pd.DataFrame(data=data_list, index=time_list, columns=['value'])
+    df = pd.DataFrame(data=data_list, index=sensor_time_list, columns=['value'])
+    df = pd.DataFrame({
+    'sensor_time': sensor_time_list, 
+    'value': data_list})
     # Filter out rows with string values in the 'value' column
     df = df.loc[df['value'].apply(lambda x: isinstance(x, float))]
 
     # Convert 'value' column to numeric type
     df['value'] = pd.to_numeric(df['value'])
+    df.to_csv(save_file_name, sep=',', index=True)
+    #print(df)
 
     return df
 
 ## function of calculate the moving average (exponantial smoothing)
 # Formula : https://en.wikipedia.org/wiki/Exponential_smoothing
 def exp_smoothing_from_raw(df):
+    # print(df)
     start_pressure = df['value'].iloc[0]  # pressure of the starting time.
     raw = []  # raw data list
     exp_smooth = []  # list for the exponential smoothing algorithm
@@ -154,8 +162,6 @@ def arima_model(raw_df):
     return arima_df
 
 def calculate_derivatives(df):
-
-    print(df)
 
     # Calculate change in 'value'
     delta_value = df['RawValue'].diff()
@@ -262,6 +268,11 @@ def bpf_pressure(raw_df):
 
     # convert back to time domain
     pressure_filtered = np.fft.ifft(pressure_fft_filtered).real.tolist()  # convert back to list
+    
+    # Set the first 20 and last 20 values to zero using a loop
+    for i in range(100):
+        pressure_filtered[i] = 0  # Set the first 20 values to zero
+        pressure_filtered[-(i + 1)] = 0  # Set the last 20 values to zero
 
     # Create new DataFrame with the same index
     bpf_raw_df = pd.DataFrame(data=pressure_filtered, index=raw_df.index, columns=['BPF_RawValue'])
@@ -282,14 +293,17 @@ def gen_main_graphs(raw, smooth, ARIMA):
     plt.plot(smooth.index, smooth['ESValue'], label = title_1, linewidth= 0.8, color = 'red')
     plt.plot(ARIMA.index, ARIMA['ARIMA'], label = title_2, linewidth=1, color = 'orange')
     # Draw a vertical line at chosen_time
-    #plt.axvline(x=earthquake_time, color='blue', linestyle='--')
-    # plt.yticks(np.arange(min(y2), max(y2), 0.2), fontsize=12)
-    # plt.xticks([])
+    if timestamp_line == True:
+        plt.axvline(x=arrive_time_dt, color='blue', linestyle='--')
+        plt.text(0.8, 0.1, "the blue line indicates the time\nwhen the sound of the earthquake arrives", ha="center", va="center", transform=plt.gca().transAxes, fontsize = 12)
+
+
     plt.legend(fontsize=15, bbox_to_anchor=[0.5, 1], loc='center', ncol=3, facecolor='white', framealpha=1)
     # plt.ylim(min(y2)-0.02, max(y2)+0.02)
     # plt.ticklabel_format(useOffset=False, style='plain')
     plt.gca().yaxis.set_major_formatter(StrMethodFormatter('{x:,.2f}'))
     plt.show()
+
 
     return ()
 
@@ -306,7 +320,7 @@ def gen_diff_graphs(first_derivative, second_derivative, residual):
     title_3 = 'Residuals (raw - E.S.)'
 
     plt.plot(first_derivative.index, first_derivative['FirstDerivative'], label = title_1, linewidth=1, color = "blue")  # plot First Derivative
-    plt.plot(second_derivative.index, second_derivative['SecondDerivative'], label = title_2, linewidth=1, color = "green") # plot Second Derivative
+    # plt.plot(second_derivative.index, second_derivative['SecondDerivative'], label = title_2, linewidth=1, color = "green") # plot Second Derivative
     plt.plot(residual.index, residual['Residual'], label = title_3, linewidth=1, color = "orange") # plot Residuals (raw - E.S.)
     plt.text(0.1, 0.1, device_name, ha="center", va="center", transform=plt.gca().transAxes, fontsize = 18, fontweight = 'bold')
     plt.legend(fontsize=12, bbox_to_anchor=[0.5, 1], loc='center', ncol=3, facecolor='white', framealpha=1)
@@ -316,6 +330,9 @@ def gen_diff_graphs(first_derivative, second_derivative, residual):
     # plt.ticklabel_format(useOffset=False, style='plain')
     # formatter = matplotlib.ticker.FuncFormatter(lambda ms, x: time.strftime('%M:%S', time.gmtime(ms // 1000)))
     # plt.gca().xaxis.set_major_formatter(formatter)
+    if timestamp_line == True:
+        plt.axvline(x=arrive_time_dt, color='blue', linestyle='--')
+        plt.text(0.8, 0.1, "the blue line indicates the time\nwhen the sound of the earthquake arrives", ha="center", va="center", transform=plt.gca().transAxes, fontsize = 12)
     plt.gca().yaxis.set_major_formatter(StrMethodFormatter('{x:,.2f}'))
 
     plt.show()
@@ -339,6 +356,9 @@ def gen_fft_ac_graph(fft):
     plt.plot(fft.index, fft['FFTValue'], label = title_1, linewidth=1, color = 'magenta')
     plt.text(0.1, 0.1, device_name, ha="center", va="center", transform=plt.gca().transAxes, fontsize = 18, fontweight = 'bold')
     plt.legend(fontsize=12, bbox_to_anchor=[0.5, 1], loc='center', ncol=3, framealpha=1)
+    if timestamp_line == True:
+        plt.axvline(x=arrive_time_dt, color='blue', linestyle='--')
+        plt.text(0.8, 0.1, "the blue line indicates the time\nwhen the sound of the earthquake arrives", ha="center", va="center", transform=plt.gca().transAxes, fontsize = 12)
     plt.xticks(fontsize=16)
 
     plt.show()
@@ -348,7 +368,6 @@ def gen_fft_ac_graph(fft):
 ## function of plotting the bandpass filtered (0.5Hz to 3Hz) pressure
 def gen_bpf_graph(bpf):
     
-
     fig_main = plt.figure(figsize=(15, 10))
     st = "%s/%s/%s %s:%s"%(starting_date.year, starting_date.month, starting_date.day, starting_date.hour, starting_date.minute)
     fig_main.suptitle("%s\nPressure (bandpass filtered to 0.5Hz-3Hz)\n(starting time is %s:00)"%( event_name, st), fontsize=18, fontweight = 'bold')
@@ -358,6 +377,9 @@ def gen_bpf_graph(bpf):
 
     plt.plot(bpf.index, bpf['BPF_RawValue'], linewidth=1, color = 'magenta')
     plt.text(0.1, 0.1, device_name, ha="center", va="center", transform=plt.gca().transAxes, fontsize = 18, fontweight = 'bold')
+    if timestamp_line == True:
+        plt.axvline(x=arrive_time_dt, color='blue', linestyle='--')
+        plt.text(0.8, 0.1, "the blue line indicates the time\nwhen the sound of the earthquake arrives", ha="center", va="center", transform=plt.gca().transAxes, fontsize = 12)
     plt.xticks(fontsize=16)
 
     plt.show()
@@ -369,13 +391,13 @@ def main():
     origninal_raw_data = data_download()
     raw, exp, residual = exp_smoothing_from_raw(origninal_raw_data)
     Quit = False
-    again = "n"
+    again = "y"
 
 
     while again == "y":
         while Quit == False:
-            print("Which plot do you want to generate?\n     1. raw data, exp smoothing, and ARIMA prediction\n     2. residual(raw - ES), first derivative, second derivative\n     3. power fft")
-            plot_option = input("Enter your choice.(1, 2 or 3): ")
+            print("Which plot do you want to generate?\n     1. raw data, exp smoothing, and ARIMA prediction\n     2. residual(raw - ES), first derivative, second derivative\n     3. power fft\n     4. power fft with bandpass filter")
+            plot_option = input("Enter your choice.(1, 2, 3 or 4): ")
             if plot_option == "1": # generate plot for raw data, exp smoothing, and ARIMA prediction for single paro
                 arima = arima_model(raw)  
                 gen_main_graphs(raw, exp, arima)
@@ -388,8 +410,11 @@ def main():
                 fft_sum = fft_ac(residual)
                 gen_fft_ac_graph(fft_sum)
                 break
+            elif plot_option == "4": # generate power fft over time with bandpass filter for single barometer
+                bpf = bpf_pressure(raw)
+                gen_bpf_graph(bpf)
             else:
-                print("invalid option. Please enter again")
+                print("Invalid option. Please enter again")
 
         again = input("generate another plot(y/n): ")
         if again == "y":
@@ -399,13 +424,6 @@ def main():
         else:
             print("Please enter again")
             again = input("generate another plot(y/n): ")
-    
-
-    bpf = bpf_pressure(raw)
-
-    # generate power fft over time with bandpass filter for single barometer
-    gen_bpf_graph(bpf)
-
 
     return()
 
